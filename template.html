@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta http-equiv="Content-Type" content="text/html; charset={{enc}}">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{title}}</title>
+</head>
+<style>
+table, th, td {
+  border: 1px solid black;
+}
+</style>
+<body onload="init()">
+  <h1>{{title}}</h1>
+  <table>
+    <tr>
+      <th>Generating</th>
+      <th>Learning</th>
+    </tr>
+    <tr>
+      <td>
+        <form action="/ajax/generate-text" method="get" id="generate-text-form">
+          <input type="text" name="text-prefix" placeholder="Исходный текст">
+          <input type="number" name="target-length" value="50" placeholder="Длина желаемого текста">
+          <input type="submit" value="Generate">
+        </form>
+      </td>
+      <td>
+        <form action="/ajax/train-model" method="post" id="train-model-form">
+          <input type="text" name="input-text" placeholder="Текст для обучения">
+          <input type="number" name="epochs" placeholder="Количество эпох">
+          <input type="number" name="learning-rate" step="0.00001" placeholder="Скорость обучения">
+          <input type="number" name="batch-size" placeholder="Размер партии">
+          <input type="submit" value="Train">
+        </form>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <a name="generated-text"></a>
+      </td>
+      <td>
+        <a name="training-progress"></a>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <a name="generation-time"></a>
+      </td>
+      <td>
+        <image name="training-stats" src=""></image>
+      </td>
+    </tr>
+  </table>
+</body>
+<script>
+  function init() {
+    const GENERATED_TEXT_ANCHOR = document.anchors['generated-text']
+    const GENERATION_TIME_ANCHOR = document.anchors['generation-time']
+    const TRAINING_PROGRESS_ANCHOR = document.anchors['training-progress']
+    const TRAINING_STATS_IMAGE = document.images['training-stats']
+    var learning_progress_timer_id = -1
+    function reset_anchors_texts(generated_text, time = '') {
+      GENERATED_TEXT_ANCHOR.innerHTML = generated_text
+      GENERATION_TIME_ANCHOR.innerHTML = time
+    }
+    function update_learning_progress() {
+      fetch("/ajax/update-learning-progress", {
+        method: 'GET',
+      }).then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.json()
+      }).then((jsondata) => {
+        if(jsondata['still_learning'] == undefined) {
+          TRAINING_PROGRESS_ANCHOR.innerHTML = "500 INTERNAL SERVER ERROR"
+          return
+        }
+        TRAINING_PROGRESS_ANCHOR.innerHTML = jsondata['learning_progress'] 
+        if(jsondata['still_learning'] == true) {
+        } else if(jsondata['still_learning'] == false) {
+          TRAINING_STATS_IMAGE.src = jsondata['plots']
+          clearInterval(learning_progress_timer_id)
+        }
+      })
+      .catch((error) => {
+        console.log(error)
+      })
+    }
+    const GENERATEX_TEXT_FIELD = "generated_text"
+    const GENERATION_TIME = "time"
+    document.forms['train-model-form'].addEventListener('submit', (event) => {
+      event.preventDefault();
+      fetch(event.target.action, {
+        method: 'POST',
+        body: new URLSearchParams(new FormData(event.target))
+      }).then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        if(learning_progress_timer_id != -1) {
+          clearInterval(learning_progress_timer_id)
+        }
+        learning_progress_timer_id = setInterval(update_learning_progress, 200)
+      }).catch((error) => {
+        console.log(error)
+      })
+    })
+    document.forms['generate-text-form'].addEventListener('submit', (event) => {
+      event.preventDefault();
+      text_input = event.target.elements['text-prefix']
+      text_input.value = text_input.value.replaceAll(/[^А-я ]/ig, '')
+      fetch(event.target.action + "?" + new URLSearchParams(new FormData(event.target)), {
+        method: 'GET',
+      }).then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.json();
+      }).then((jsondata) => {
+        if (jsondata[GENERATEX_TEXT_FIELD] == undefined ||
+          jsondata[GENERATION_TIME] == undefined) {
+          reset_anchors_texts("500 INTERNAL SERVER ERROR")
+          return
+        }
+        reset_anchors_texts(jsondata[GENERATEX_TEXT_FIELD], jsondata[GENERATION_TIME])
+      }).catch((error) => {
+        reset_anchors_texts(error.toString())
+      });
+    });
+  }
+</script>
+
+</html>
